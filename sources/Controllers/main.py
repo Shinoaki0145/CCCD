@@ -162,26 +162,37 @@ def extract_back_info(img_path):
     W, H = aligned.size
 
     # 1. Date of issue (Ngày, tháng, năm / Date, month, year)
-    crop_date = aligned.crop((int(W * 0.03), int(H * 0.14), int(W * 0.55), int(H * 0.22)))
+    crop_date = aligned.crop((int(W * 0.02), int(H * 0.12), int(W * 0.58), int(H * 0.23)))
     text_date_raw = detector.predict(crop_date)
-    match_date = re.search(r"(\d{1,2}/\d{1,2}/\d{4})", text_date_raw)
-    issue_date = match_date.group(1) if match_date else text_date_raw.strip()
 
-    # 2. Place of issue (CỤC TRƯỞNG CỤC CẢNH SÁT QUẢN LÝ HÀNH CHÍNH VỀ TRẬT TỰ XÃ HỘI)
-    crop_issuer_1 = aligned.crop((int(W * 0.14), int(H * 0.19), int(W * 0.50), int(H * 0.25)))
-    crop_issuer_2 = aligned.crop((int(W * 0.08), int(H * 0.23), int(W * 0.55), int(H * 0.29)))
-    line1 = detector.predict(crop_issuer_1).strip()
-    line2 = detector.predict(crop_issuer_2).strip()
-    issue_place = f"{line1} {line2}".strip()
+    issue_date = ""
+    match_date = re.search(r"(\d{1,2})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(\d{4})", text_date_raw)
+    if match_date:
+        d, m, y = match_date.group(1), match_date.group(2), match_date.group(3)
+        issue_date = f"{int(d):02d}/{int(m):02d}/{y}"
+    else:
+        match_date_text = re.search(
+            r"(\d{1,2})\s*(?:tháng|thang)\s*(\d{1,2})\s*(?:năm|nam)\s*(\d{4})",
+            text_date_raw,
+            re.IGNORECASE,
+        )
+        if match_date_text:
+            d, m, y = match_date_text.group(1), match_date_text.group(2), match_date_text.group(3)
+            issue_date = f"{int(d):02d}/{int(m):02d}/{y}"
+        else:
+            issue_date = text_date_raw.strip()
 
-    if len(issue_place) < 8:
-        crop_issuer_full = aligned.crop((int(W * 0.08), int(H * 0.19), int(W * 0.55), int(H * 0.30)))
-        issue_place = detector.predict(crop_issuer_full).strip()
+    # 2. Cố gắng trích xuất nội dung Nơi cấp từ ảnh (Tiền xử lý lọc con dấu + quét đa vùng)
+    ocr_raw_place = utils.extract_issuer_text_from_image(aligned, W, H, detector)
+
+    # 3. Chuẩn hóa nơi cấp: Ưu tiên nội dung OCR trích xuất được từ ảnh, fallback sang quy tắc ngày cấp
+    issue_place = utils.determine_issue_place(issue_date, ocr_raw_place)
 
     return {
         "issue_date": issue_date,
         "issue_place": issue_place,
     }
+
 
 
 @app.post("/uploader")
